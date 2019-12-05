@@ -1,0 +1,1 @@
+make -C ../build "$@" && echo && PYTHONPATH=../build python3 test.py
