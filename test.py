@@ -3,6 +3,10 @@ def f():
     # 1/0
     return
 
+
+def h():
+  f()
+
 import afl37
 
 def g():
@@ -13,5 +17,5 @@ def g():
 
 g()
 x = 11
-f()
+h()
 x = 12
