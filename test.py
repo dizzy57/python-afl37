@@ -1,3 +1,5 @@
+from sys import settrace
+
 def f():
     x = 5
     # 1/0
@@ -6,6 +8,7 @@ def f():
 
 def h():
   f()
+  settrace(None)
 
 import afl37
 
@@ -18,4 +21,4 @@ def g():
 g()
 x = 11
 h()
-x = 12
+print("python end")

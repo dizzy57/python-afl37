@@ -17,6 +17,9 @@ int tracefunc(PyObject* obj, PyFrameObject* frame, int what, PyObject* arg) {
     auto code = frame->f_code;
     auto filename = py::reinterpret_borrow<py::str>(code->co_filename);
     auto name = py::reinterpret_borrow<py::str>(code->co_name);
+    // also use first line of code, as code object names and file names are not
+    // sufficient
+    //
     // Cast py::str to string_view?
     cout << "push frame " << string(filename) << " " << string(name) << endl;
   } else if (what == PyTrace_RETURN) {
@@ -26,7 +29,10 @@ int tracefunc(PyObject* obj, PyFrameObject* frame, int what, PyObject* arg) {
 }
 
 void init() {
-  PyEval_SetTrace(tracefunc, nullptr);
+  auto capsule = py::capsule((void*)1234, [](void* ptr) {
+    cout << "destructing capsule: " << (size_t)ptr << endl;
+  });
+  PyEval_SetTrace(tracefunc, capsule.ptr());
 }
 
 PYBIND11_MODULE(afl37, m) {
