@@ -1,34 +1,63 @@
 #include <pybind11/pybind11.h>
 #include <iostream>
-#include <string>
+#include <stack>
 
 #define LIKELY(condition) __builtin_expect(static_cast<bool>(condition), 1)
 
 namespace py = pybind11;
-using namespace std;
+using std::cout, std::endl;
+
+// hash_combine() taken from https://stackoverflow.com/a/38140932
+
+inline void hash_combine(std::size_t& seed) {}
+
+template <typename T, typename... Rest>
+inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
+  std::hash<T> hasher;
+  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+  hash_combine(seed, rest...);
+}
+
+std::string_view PyStringView(PyObject* const obj) {
+  auto string_ready = PyUnicode_READY(obj);
+  assert(string_ready == 0);
+  std::size_t size = PyUnicode_GET_LENGTH(obj) * PyUnicode_KIND(obj);
+  return {static_cast<char*>(PyUnicode_DATA(obj)), size};
+}
+
+std::size_t HashFrame(const PyFrameObject* const frame) {
+  auto code = frame->f_code;
+  auto file_name = PyStringView(code->co_filename);
+  auto code_object_name = PyStringView(code->co_name);
+
+  std::size_t res = code->co_firstlineno;
+  hash_combine(res, file_name, code_object_name);
+  return res;
+}
 
 class TraceState {
  public:
-  void opcode(PyFrameObject* frame, int is_exception) {
-    cout << is_exception << " " << ((size_t)frame) % 100 << " "
-         << frame->f_lineno << " " << frame->f_lasti << endl;
+  void opcode(const PyFrameObject* const frame, int is_exception) {
+    cout << is_exception << " " << current_hash_ % 100 << " " << frame->f_lasti
+         << endl;
   }
-  void frame_push(PyFrameObject* frame) {
+  void frame_push(PyFrameObject* const frame) {
     frame->f_trace_lines = 0;
     frame->f_trace_opcodes = 1;
-    auto code = frame->f_code;
-    auto filename = py::reinterpret_borrow<py::str>(code->co_filename);
-    auto name = py::reinterpret_borrow<py::str>(code->co_name);
-    // also use first line of code, as code object names and file names are not
-    // sufficient
-    //
-    // Cast py::str to string_view?
-    cout << "push frame " << string(filename) << " " << string(name) << endl;
+    previous_hashes_.push(current_hash_);
+    current_hash_ = HashFrame(frame);
+    cout << "push frame " << current_hash_ % 100 << endl;
   }
-  void frame_pop() { cout << "pop frame" << endl; }
+  void frame_pop() {
+    cout << "pop frame " << current_hash_ % 100 << endl;
+    current_hash_ = previous_hashes_.top();
+    previous_hashes_.pop();
+  }
   ~TraceState() { cout << "tracing end" << endl; }
 
  private:
+  std::size_t current_hash_ = 0;
+  std::stack<std::size_t> previous_hashes_;
 };
 
 int tracefunc(PyObject* obj, PyFrameObject* frame, int what, PyObject* arg) {
