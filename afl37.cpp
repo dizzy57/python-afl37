@@ -1,4 +1,5 @@
 #include <pybind11/pybind11.h>
+#include <bitset>
 #include <iostream>
 #include <stack>
 
@@ -6,6 +7,10 @@
 
 namespace py = pybind11;
 using std::cout, std::endl;
+
+// With all the right shifts employed by hash_combine and previous_location_
+// calculations it's better to set this to something large (e.g. not 1)
+const int kIsException = 1 << 6;
 
 // hash_combine() taken from https://stackoverflow.com/a/38140932
 
@@ -35,54 +40,63 @@ std::size_t HashFrame(const PyFrameObject* const frame) {
   return res;
 }
 
-class TraceState {
+class Tracer {
  public:
-  void opcode(const PyFrameObject* const frame, int is_exception) {
-    cout << is_exception << " " << current_hash_ % 100 << " " << frame->f_lasti
+  void TraceOpcode(const PyFrameObject* const frame, int is_exception = 0) {
+    std::size_t current_location = current_frame_hash_;
+    auto last_opcode_index = frame->f_lasti;
+    hash_combine(current_location, last_opcode_index, is_exception);
+    std::size_t afl_map_offset = current_location ^ previous_location_;
+    previous_location_ = current_location >> 1;
+    cout << current_frame_hash_ % 100 << " " << std::bitset<16>(afl_map_offset)
          << endl;
   }
-  void frame_push(PyFrameObject* const frame) {
+  void PushFrame(PyFrameObject* const frame) {
     frame->f_trace_lines = 0;
     frame->f_trace_opcodes = 1;
-    previous_hashes_.push(current_hash_);
-    current_hash_ = HashFrame(frame);
-    cout << "push frame " << current_hash_ % 100 << endl;
+    previous_frame_hashes_.push(current_frame_hash_);
+    current_frame_hash_ = HashFrame(frame);
+    cout << "push frame " << current_frame_hash_ % 100 << endl;
   }
-  void frame_pop() {
-    cout << "pop frame " << current_hash_ % 100 << endl;
-    current_hash_ = previous_hashes_.top();
-    previous_hashes_.pop();
+  void PopFrame() {
+    cout << "pop frame " << current_frame_hash_ % 100 << endl;
+    current_frame_hash_ = previous_frame_hashes_.top();
+    previous_frame_hashes_.pop();
   }
-  ~TraceState() { cout << "tracing end" << endl; }
+  ~Tracer() { cout << "tracing end" << endl; }
 
  private:
-  std::size_t current_hash_ = 0;
-  std::stack<std::size_t> previous_hashes_;
+  std::size_t previous_location_ = 0;
+  std::size_t current_frame_hash_ = 0;
+  std::stack<std::size_t> previous_frame_hashes_;
 };
 
-int tracefunc(PyObject* obj, PyFrameObject* frame, int what, PyObject* arg) {
-  auto ts = static_cast<TraceState*>(PyCapsule_GetPointer(obj, nullptr));
-  if (LIKELY(what == PyTrace_OPCODE) || (what == PyTrace_EXCEPTION)) {
-    // Log both normal path and exception propagation path, they should give
-    // different coverage
-    ts->opcode(frame, what == PyTrace_EXCEPTION ? 1 : 0);
+int TraceFunc(PyObject* obj, PyFrameObject* frame, int what, PyObject* arg) {
+  // Having an empty capsule name is a bad idea, but I dont want to have a
+  // string comparison on the hot path.
+  auto tracer = static_cast<Tracer*>(PyCapsule_GetPointer(obj, nullptr));
+  // Log both normal path and exception propagation path, they should give
+  // different coverage
+  if (LIKELY(what == PyTrace_OPCODE)) {
+    tracer->TraceOpcode(frame);
+  } else if (what == PyTrace_EXCEPTION) {
+    tracer->TraceOpcode(frame, kIsException);
   } else if ((what == PyTrace_CALL) || (what == PyTrace_LINE)) {
     // If we encounter a PyTrace_LINE event, that means that we've arrived in a
     // new frame that was in a middle of execution. Line event always precedes
     // opcode event and opcode event will be raised if we set `f_trace_opcodes`
     // in line event handler. See `maybe_call_line_trace()` in `ceval.c`
-    ts->frame_push(frame);
+    tracer->PushFrame(frame);
   } else if (what == PyTrace_RETURN) {
-    ts->frame_pop();
+    tracer->PopFrame();
   }
   return 0;
 }
 
 void init() {
-  auto capsule = py::capsule(new TraceState(), [](void* ptr) {
-    delete static_cast<TraceState*>(ptr);
-  });
-  PyEval_SetTrace(tracefunc, capsule.ptr());
+  auto tracer = py::capsule(
+      new Tracer(), [](void* ptr) { delete static_cast<Tracer*>(ptr); });
+  PyEval_SetTrace(TraceFunc, tracer.ptr());
 }
 
 PYBIND11_MODULE(afl37, m) {
