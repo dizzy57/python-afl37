@@ -1,0 +1,2 @@
+rm -rf outputs/
+make -C ../build "$@" && PYTHONPATH=../build ./py-afl37-fuzz -i inputs/ -o outputs/ -- python test-fuzz.py new
