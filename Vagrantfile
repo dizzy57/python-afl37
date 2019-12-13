@@ -15,7 +15,7 @@ Vagrant.configure("2") do |config|
     export DEBIAN_FRONTEND=noninteractive
     apt-get -y update
     apt-get -y dist-upgrade
-    apt-get -y install git build-essential cmake afl
+    apt-get -y install git build-essential cmake afl clang-format
     apt-get -y build-dep python3.7
   SHELL
 

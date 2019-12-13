@@ -24,7 +24,7 @@ def g(data):
         return True
 
 
-while afl.loop(10000):
+while afl.loop(10_000):
     stdin.seek(0)
 
     try:

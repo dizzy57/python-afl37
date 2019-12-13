@@ -1,2 +1,2 @@
 rm -rf outputs/
-py-afl-fuzz -i inputs/ -o outputs/ -- python test-fuzz.py
+py-afl-fuzz -i inputs/ -o outputs/ "$@" -- python test-fuzz.py
