@@ -46,10 +46,15 @@ std::size_t HashFrame(const PyFrameObject* const frame) {
 // forward
 int TraceFunc(PyObject*, PyFrameObject*, int, PyObject*);
 
+//#define DISABLE_FRAME_STACK
 class Tracer {
  public:
   void TraceOpcode(const PyFrameObject* const frame, int is_exception = 0) {
+#ifndef DISABLE_FRAME_STACK
     std::size_t current_location = current_frame_hash_;
+#else
+    std::size_t current_location = HashFrame(frame);
+#endif
     auto last_opcode_index = frame->f_lasti;
     hash_combine(current_location, last_opcode_index, is_exception);
     std::size_t afl_map_offset = current_location ^ previous_location_;
@@ -59,12 +64,16 @@ class Tracer {
   void PushFrame(PyFrameObject* const frame) {
     frame->f_trace_lines = 0;
     frame->f_trace_opcodes = 1;
+#ifndef DISABLE_FRAME_STACK
     previous_frame_hashes_.push(current_frame_hash_);
     current_frame_hash_ = HashFrame(frame);
+#endif
   }
   void PopFrame() {
+#ifndef DISABLE_FRAME_STACK
     current_frame_hash_ = previous_frame_hashes_.top();
     previous_frame_hashes_.pop();
+#endif
   }
   void ResetState() { previous_location_ = 0; }
   void StartTracing() {
@@ -89,15 +98,20 @@ class Tracer {
  private:
   u8* afl_area_ptr_ = nullptr;
   std::size_t previous_location_ = 0;
+#ifndef DISABLE_STACK
   std::size_t current_frame_hash_ = 0;
   std::stack<std::size_t> previous_frame_hashes_;
+#endif
 
   static const u8 kMapSizePow2 = 16;
   static const std::size_t kMapSize = 1 << kMapSizePow2;
   static constexpr const char* kShmEnvVar = "__AFL_SHM_ID";
 } tracer;
 
-int TraceFunc(PyObject*, PyFrameObject* frame, int what, PyObject*) {
+[[gnu::hot]] int TraceFunc(PyObject*,
+                           PyFrameObject* frame,
+                           int what,
+                           PyObject*) {
   // Log both normal path and exception propagation path, they should give
   // different coverage
   if (LIKELY(what == PyTrace_OPCODE)) {
@@ -209,7 +223,7 @@ bool loop(long max_cnt) {
 
   if (cur_cnt == 0) {
     ForkServer::Start();  // child returns here
-    // is_persistent?
+    // is_persistent? - return it from forkserver
     cur_cnt = 1;
     tracer.StartTracing();
     return true;

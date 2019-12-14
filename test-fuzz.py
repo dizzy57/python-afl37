@@ -24,6 +24,14 @@ def g(data):
         return True
 
 
+def rec(n, data):
+    if n:
+        f(data)
+        return rec(n - 1, data[1:])
+    else:
+        return f(data)
+
+
 while afl.loop(10_000):
     stdin.seek(0)
 
@@ -32,7 +40,7 @@ while afl.loop(10_000):
     except UnicodeDecodeError:
         continue
 
-    if f(data):
+    if rec(10, data):
         raise RuntimeError
 
 os._exit(0)
