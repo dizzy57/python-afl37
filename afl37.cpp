@@ -139,6 +139,8 @@ class ForkServer {
       return;
     }
 
+    SetExceptHook();
+
     bool is_persistent = true;
     bool child_stopped = false;
     pid_t child_pid;
@@ -206,12 +208,16 @@ class ForkServer {
     return status;
   }
 
+  static void SetExceptHook() {
+    auto sys = py::module::import("sys");
+    sys.attr("excepthook") = py::cpp_function(
+        [](py::object, py::object, py::object) { raise(SIGUSR1); });
+  }
+
   static void PrepareChild() {
     close(kControlFd);
     close(kStatusFd);
     // TODO: restore sighandler for sigchld
-    // TODO: install python exception handler
-    // TODO: install python tracing
 
     return;
   }
@@ -238,6 +244,7 @@ bool loop(long max_cnt) {
   } else {
     // Disable tracing: collected coverage will be reported on process exit
     tracer.StopTracing();
+    // maybe _exit(0); ?
     return false;
   }
 }
