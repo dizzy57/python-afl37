@@ -1,7 +1,6 @@
 #include <pybind11/pybind11.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
-#include <stack>
 
 #define LIKELY(condition) __builtin_expect(static_cast<bool>(condition), 1)
 
@@ -46,15 +45,10 @@ std::size_t HashFrame(const PyFrameObject* const frame) {
 // forward
 int TraceFunc(PyObject*, PyFrameObject*, int, PyObject*);
 
-//#define DISABLE_FRAME_STACK
 class Tracer {
  public:
   void TraceOpcode(const PyFrameObject* const frame, int is_exception = 0) {
-#ifndef DISABLE_FRAME_STACK
     std::size_t current_location = current_frame_hash_;
-#else
-    std::size_t current_location = HashFrame(frame);
-#endif
     auto last_opcode_index = frame->f_lasti;
     hash_combine(current_location, last_opcode_index, is_exception);
     std::size_t afl_map_offset = current_location ^ previous_location_;
@@ -64,16 +58,10 @@ class Tracer {
   void PushFrame(PyFrameObject* const frame) {
     frame->f_trace_lines = 0;
     frame->f_trace_opcodes = 1;
-#ifndef DISABLE_FRAME_STACK
-    previous_frame_hashes_.push(current_frame_hash_);
     current_frame_hash_ = HashFrame(frame);
-#endif
   }
-  void PopFrame() {
-#ifndef DISABLE_FRAME_STACK
-    current_frame_hash_ = previous_frame_hashes_.top();
-    previous_frame_hashes_.pop();
-#endif
+  void PopFrame(const PyFrameObject* const frame) {
+    current_frame_hash_ = HashFrame(frame->f_back);
   }
   void ResetState() { previous_location_ = 0; }
   void MapSharedMemory() {
@@ -102,10 +90,7 @@ class Tracer {
  private:
   u8* afl_area_ptr_ = nullptr;
   std::size_t previous_location_ = 0;
-#ifndef DISABLE_STACK
   std::size_t current_frame_hash_ = 0;
-  std::stack<std::size_t> previous_frame_hashes_;
-#endif
 
   static const u8 kMapSizePow2 = 16;
   static const std::size_t kMapSize = 1 << kMapSizePow2;
@@ -129,7 +114,7 @@ class Tracer {
     // in line event handler. See `maybe_call_line_trace()` in `ceval.c`
     tracer.PushFrame(frame);
   } else if (what == PyTrace_RETURN) {
-    tracer.PopFrame();
+    tracer.PopFrame(frame);
   }
   return 0;
 }
