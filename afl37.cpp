@@ -76,7 +76,7 @@ class Tracer {
 #endif
   }
   void ResetState() { previous_location_ = 0; }
-  void StartTracing() {
+  void MapSharedMemory() {
     char* env_var_value = std::getenv(kShmEnvVar);
 
     if (!env_var_value) {
@@ -88,7 +88,11 @@ class Tracer {
       _exit(1);
     }
     afl_area_ptr_ = static_cast<u8*>(shmat_res);
-    PyEval_SetTrace(TraceFunc, nullptr);
+  }
+  void StartTracing() const {
+    if (afl_area_ptr_) {
+      PyEval_SetTrace(TraceFunc, nullptr);
+    }
   }
   void StopTracing() {
     afl_area_ptr_ = nullptr;
@@ -224,10 +228,11 @@ class ForkServer {
 };
 
 bool loop(long max_cnt) {
-  static u32 cur_cnt = 0;  // remains 0 in parent process
+  static u32 cur_cnt = 0;
   tracer.ResetState();
 
   if (cur_cnt == 0) {
+    tracer.MapSharedMemory();
     ForkServer::Start();  // child returns here
     // is_persistent? - return it from forkserver
     cur_cnt = 1;
