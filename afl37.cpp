@@ -9,61 +9,31 @@ namespace py = pybind11;
 using u8 = uint8_t;
 using u32 = uint32_t;
 
-// With all the right shifts employed by hash_combine and previous_location_
-// calculations it's better to set this to something large (e.g. not 1)
-const int kIsException = 1 << 6;
-
-// hash_combine() taken from https://stackoverflow.com/a/38140932
-
-inline void hash_combine(std::size_t& seed[[maybe_unused]]) {}
-
-template <typename T, typename... Rest>
-inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
-  std::hash<T> hasher;
-  seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-  hash_combine(seed, rest...);
-}
-
-std::string_view PyStringView(PyObject* const obj) {
-  if (PyUnicode_READY(obj) != 0) {
-    _exit(1);
-  }
-  std::size_t size = PyUnicode_GET_LENGTH(obj) * PyUnicode_KIND(obj);
-  return {static_cast<char*>(PyUnicode_DATA(obj)), size};
-}
-
-std::size_t HashFrame(const PyFrameObject* const frame) {
-  auto code = frame->f_code;
-  auto file_name = PyStringView(code->co_filename);
-  auto code_object_name = PyStringView(code->co_name);
-
-  std::size_t res = code->co_firstlineno;
-  hash_combine(res, file_name, code_object_name);
-  return res;
-}
-
 // forward
 int TraceFunc(PyObject*, PyFrameObject*, int, PyObject*);
 
 class Tracer {
  public:
-  void TraceOpcode(const PyFrameObject* const frame, int is_exception = 0) {
-    std::size_t current_location = current_frame_hash_;
-    auto last_opcode_index = frame->f_lasti;
-    hash_combine(current_location, last_opcode_index, is_exception);
-    std::size_t afl_map_offset = current_location ^ previous_location_;
+  void TraceOpcode(const PyFrameObject* const frame, u32 is_exception = 0) {
+    u32 current_location =
+        current_frame_hash_ ^ HashOpcode(frame, is_exception);
+    u32 afl_map_offset = current_location ^ previous_location_;
     ++afl_area_ptr_[afl_map_offset % kMapSize];
     previous_location_ = current_location >> 1;
   }
+
   void PushFrame(PyFrameObject* const frame) {
     frame->f_trace_lines = 0;
     frame->f_trace_opcodes = 1;
     current_frame_hash_ = HashFrame(frame);
   }
+
   void PopFrame(const PyFrameObject* const frame) {
     current_frame_hash_ = HashFrame(frame->f_back);
   }
+
   void ResetState() { previous_location_ = 0; }
+
   void MapSharedMemory() {
     char* env_var_value = std::getenv(kShmEnvVar);
 
@@ -77,11 +47,13 @@ class Tracer {
     }
     afl_area_ptr_ = static_cast<u8*>(shmat_res);
   }
+
   void StartTracing() const {
     if (afl_area_ptr_) {
       PyEval_SetTrace(TraceFunc, nullptr);
     }
   }
+
   void StopTracing() {
     afl_area_ptr_ = nullptr;
     PyEval_SetTrace(nullptr, nullptr);
@@ -89,12 +61,52 @@ class Tracer {
 
  private:
   u8* afl_area_ptr_ = nullptr;
-  std::size_t previous_location_ = 0;
-  std::size_t current_frame_hash_ = 0;
+  u32 previous_location_ = 0;
+  u32 current_frame_hash_ = 0;
 
   static const u8 kMapSizePow2 = 16;
-  static const std::size_t kMapSize = 1 << kMapSizePow2;
+  static const u32 kMapSize = 1 << kMapSizePow2;
   static constexpr const char* kShmEnvVar = "__AFL_SHM_ID";
+
+  static u32 FNV_1a(const std::string_view&& s) {
+    u32 hash = UINT32_C(0x811c9dc5);
+    for (u8 c : s) {
+      hash ^= c;
+      hash *= UINT32_C(0x01000193);
+    }
+    return hash;
+  }
+
+  static u32 Hash_u32(u32 x) {
+    x ^= x >> 16;
+    x *= UINT32_C(0x7feb352d);
+    x ^= x >> 15;
+    x *= UINT32_C(0x846ca68b);
+    x ^= x >> 16;
+    return x;
+  }
+
+  static std::string_view PyStringView(PyObject* const obj) {
+    if (PyUnicode_READY(obj) != 0) {
+      _exit(1);
+    }
+    std::size_t size = PyUnicode_GET_LENGTH(obj) * PyUnicode_KIND(obj);
+    return {static_cast<char*>(PyUnicode_DATA(obj)), size};
+  }
+
+  static u32 HashFrame(const PyFrameObject* const frame) {
+    auto code = frame->f_code;
+    u32 file_name = FNV_1a(PyStringView(code->co_filename));
+    u32 code_object_name = FNV_1a(PyStringView(code->co_name));
+    u32 first_lineno = Hash_u32(code->co_firstlineno);
+    return file_name ^ code_object_name ^ first_lineno;
+  }
+
+  static u32 HashOpcode(const PyFrameObject* const frame, u32 is_exception) {
+    u32 last_opcode_index = frame->f_lasti;
+    // Opcode indices are even, is_exception is either 0 or 1
+    return Hash_u32(last_opcode_index ^ is_exception);
+  }
 } tracer;
 
 [[gnu::hot]] int TraceFunc(PyObject*,
@@ -106,7 +118,7 @@ class Tracer {
   if (LIKELY(what == PyTrace_OPCODE)) {
     tracer.TraceOpcode(frame);
   } else if (what == PyTrace_EXCEPTION) {
-    tracer.TraceOpcode(frame, kIsException);
+    tracer.TraceOpcode(frame, /* is_exception */ 1);
   } else if ((what == PyTrace_CALL) || (what == PyTrace_LINE)) {
     // If we encounter a PyTrace_LINE event, that means that we've arrived in a
     // new frame that was in a middle of execution. Line event always precedes
