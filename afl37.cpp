@@ -133,16 +133,17 @@ class Tracer {
 
 class ForkServer {
  public:
-  static void Start() {
-    // Report our presense to controlling process
+  static bool ShouldBePersistent() {
+    return static_cast<bool>(std::getenv(kPersistentEnvVar));
+  }
+
+  static void Start(bool is_persistent) {
+    // Report our presense to the controlling process
     if (!WriteStatus(0)) {
       // We don't have a controlling process, continue normal execution
       return;
     }
 
-    SetExceptHook();
-
-    bool is_persistent = true;
     bool child_stopped = false;
     pid_t child_pid;
 
@@ -152,8 +153,8 @@ class ForkServer {
       u32 was_killed = ReadControlOrDie();
 
       if (child_stopped && was_killed) {
-        child_stopped = false;
         WaitPidOrDie(child_pid);  // Reap
+        child_stopped = false;
       }
 
       if (!child_stopped) {
@@ -182,6 +183,7 @@ class ForkServer {
  private:
   static const int kControlFd = 198;
   static const int kStatusFd = kControlFd + 1;
+  static constexpr const char* kPersistentEnvVar = "PYTHON_AFL_PERSISTENT";
 
   static u32 ReadControlOrDie() {
     u32 data;
@@ -209,12 +211,6 @@ class ForkServer {
     return status;
   }
 
-  static void SetExceptHook() {
-    auto sys = py::module::import("sys");
-    sys.attr("excepthook") = py::cpp_function(
-        [](py::object, py::object, py::object) { raise(SIGUSR1); });
-  }
-
   static void PrepareChild() {
     close(kControlFd);
     close(kStatusFd);
@@ -224,20 +220,30 @@ class ForkServer {
   }
 };
 
-bool loop(long max_cnt) {
+void SetPythonExceptHook() {
+  auto sys = py::module::import("sys");
+  sys.attr("excepthook") = py::cpp_function(
+      [](py::object, py::object, py::object) { raise(SIGUSR1); });
+}
+
+bool loop(u32 max_cnt) {
   static u32 cur_cnt = 0;
+  static bool is_persistent = false;
+
   tracer.ResetState();
 
   if (cur_cnt == 0) {
-    tracer.MapSharedMemory();
-    ForkServer::Start();  // child returns here
-    // is_persistent? - return it from forkserver
     cur_cnt = 1;
+    is_persistent = ForkServer::ShouldBePersistent();
+
+    SetPythonExceptHook();
+    tracer.MapSharedMemory();
     tracer.StartTracing();
+    ForkServer::Start(is_persistent);  // child returns here
     return true;
   }
 
-  bool cont = (max_cnt > 0) && (cur_cnt < max_cnt);
+  bool cont = is_persistent && ((max_cnt == 0) || (cur_cnt < max_cnt));
 
   if (cont) {
     raise(SIGSTOP);
@@ -252,5 +258,6 @@ bool loop(long max_cnt) {
 }
 
 PYBIND11_MODULE(afl37, m) {
+  m.def("init", []() { loop(1); });
   m.def("loop", &loop, py::arg("max_cnt") = 0);
 }
