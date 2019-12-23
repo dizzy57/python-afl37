@@ -64,8 +64,8 @@ class Tracer {
   u32 previous_location_ = 0;
   u32 current_frame_hash_ = 0;
 
-  static const u8 kMapSizePow2 = 16;
-  static const u32 kMapSize = 1 << kMapSizePow2;
+  static constexpr u8 kMapSizePow2 = 16;
+  static constexpr u32 kMapSize = 1 << kMapSizePow2;
   static constexpr const char* kShmEnvVar = "__AFL_SHM_ID";
 
   static u32 FNV_1a(const std::string_view&& s) {
@@ -77,7 +77,7 @@ class Tracer {
     return hash;
   }
 
-  static u32 Hash_u32(u32 x) {
+  static constexpr u32 Hash_u32(u32 x) {
     x ^= x >> 16;
     x *= UINT32_C(0x7feb352d);
     x ^= x >> 15;
@@ -181,8 +181,8 @@ class ForkServer {
   }
 
  private:
-  static const int kControlFd = 198;
-  static const int kStatusFd = kControlFd + 1;
+  static constexpr int kControlFd = 198;
+  static constexpr int kStatusFd = kControlFd + 1;
   static constexpr const char* kPersistentEnvVar = "PYTHON_AFL_PERSISTENT";
 
   static u32 ReadControlOrDie() {
