@@ -12,7 +12,7 @@ using u32 = uint32_t;
 // forward
 int TraceFunc(PyObject*, PyFrameObject*, int, PyObject*);
 
-class Tracer {
+static class Tracer {
  public:
   void TraceOpcode(const PyFrameObject* const frame, u32 is_exception = 0) {
     u32 current_location =
@@ -145,7 +145,7 @@ class ForkServer {
     }
 
     bool child_stopped = false;
-    pid_t child_pid;
+    pid_t child_pid = -1;
     PyOS_sighandler_t previous_sigchld_handler = PyOS_setsig(SIGCHLD, SIG_DFL);
 
     while (true) {
@@ -170,7 +170,7 @@ class ForkServer {
       } else {
         // Resume existing child process
         kill(child_pid, SIGCONT);
-        child_stopped = false;
+        // child_stopped = false;
       }
 
       WriteStatusOrDie(child_pid);
@@ -218,13 +218,13 @@ class ForkServer {
   }
 };
 
-void SetPythonExceptHook() {
+static void SetPythonExceptHook() {
   auto sys = py::module::import("sys");
   sys.attr("excepthook") = py::cpp_function(
       [](py::object, py::object, py::object) { raise(SIGUSR1); });
 }
 
-bool loop(u32 max_cnt) {
+static bool loop(u32 max_cnt) {
   static u32 cur_cnt = 0;
   static bool is_persistent = false;
 

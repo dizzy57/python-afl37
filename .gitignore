@@ -3,3 +3,4 @@ pybind11
 inputs
 outputs
 ubuntu-bionic-18.04-cloudimg-console.log
+afl37.cpython-37m-x86_64-linux-gnu.so

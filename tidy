@@ -1,1 +1,1 @@
-exec clang-tidy "$@" afl37.cpp -- -I/home/dizzy/afl37/pybind11/include -I/usr/include/python3.7m -I/usr/lib/llvm-4.0/lib/clang/4.0.1/include -std=c++1z
+exec clang-tidy-9 "$@" afl37.cpp -- -Ipybind11/include -I/usr/include/python3.7m -I/usr/lib/llvm-9/lib/clang/9.0.0/include -std=gnu++17
