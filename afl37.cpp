@@ -146,8 +146,7 @@ class ForkServer {
 
     bool child_stopped = false;
     pid_t child_pid;
-
-    // TODO: save and reset sigchld with PySys_*
+    PyOS_sighandler_t previous_sigchld_handler = PyOS_setsig(SIGCHLD, SIG_DFL);
 
     while (true) {
       u32 was_killed = ReadControlOrDie();
@@ -164,8 +163,9 @@ class ForkServer {
           _exit(1);
         }
         if (!child_pid) {
-          // We are in child process, exit from the loop
-          return PrepareChild();
+          // We are in the child process, exit from the loop
+          PrepareChild(previous_sigchld_handler);
+          return;
         }
       } else {
         // Resume existing child process
@@ -211,12 +211,10 @@ class ForkServer {
     return status;
   }
 
-  static void PrepareChild() {
+  static void PrepareChild(const PyOS_sighandler_t sigchld_handler) {
     close(kControlFd);
     close(kStatusFd);
-    // TODO: restore sighandler for sigchld
-
-    return;
+    PyOS_setsig(SIGCHLD, sigchld_handler);
   }
 };
 

@@ -19,5 +19,5 @@ Vagrant.configure("2") do |config|
   SHELL
 
   config.vm.synced_folder ".", "/vagrant", disabled: true
-  config.vm.synced_folder ".", "/home/vagrant/afl37"
+  config.vm.synced_folder ".", "/home/vagrant/python-afl37"
 end
