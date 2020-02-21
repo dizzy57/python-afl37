@@ -1,13 +1,19 @@
+#!/bin/bash
 set -x
 
 #CXX="c++ -fno-fat-lto-objects"
 CXX="clang++-9 -fsized-deallocation"
 
 EXTRA_FLAGS="-O3 -std=gnu++17 -Wall -Wextra -pedantic"
-#EXTRA_FLAGS="-Weverything -Wno-c++98-compat $EXTRA_FLAGS"
-EXTRA_FLAGS="-Werror $EXTRA_FLAGS"
-
 INCLUDES=`python -m pybind11 --includes`
-#INCLUDES=`python -m pybind11 --includes| sed -e 's/-I/-isystem /g'`
+
+linting=1
+
+if [[ $linting == 1 ]]; then
+  EXTRA_FLAGS="-Weverything -Wno-c++98-compat $EXTRA_FLAGS"
+  INCLUDES=`echo "$INCLUDES"| sed -e 's/-I/-isystem /g'`
+else
+  EXTRA_FLAGS="-Werror $EXTRA_FLAGS"
+fi
 
 $CXX $INCLUDES -fPIC -fvisibility=hidden -flto -shared $EXTRA_FLAGS -o afl37.cpython-37m-x86_64-linux-gnu.so afl37.cpp
