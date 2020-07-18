@@ -1,0 +1,2 @@
+rm -rf outputs/
+./py-afl37-fuzz -i inputs/ -o outputs/ "$@" -- python test-fuzz.py new

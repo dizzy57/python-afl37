@@ -16,4 +16,7 @@ else
   EXTRA_FLAGS="-Werror $EXTRA_FLAGS"
 fi
 
-$CXX $INCLUDES -fPIC -fvisibility=hidden -flto -shared $EXTRA_FLAGS -o afl37.cpython-37m-x86_64-linux-gnu.so afl37.cpp
+SO_FILE=afl37.cpython-37m-x86_64-linux-gnu.so
+
+rm -f $SO_FILE
+$CXX $INCLUDES -fPIC -fvisibility=hidden -flto -shared $EXTRA_FLAGS -o $SO_FILE afl37.cpp
