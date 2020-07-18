@@ -36,7 +36,6 @@ static class Tracer {
 
   void MapSharedMemory() {
     char* env_var_value = std::getenv(kShmEnvVar);
-
     if (!env_var_value) {
       return;
     }
@@ -68,15 +67,6 @@ static class Tracer {
   static constexpr u32 kMapSize = 1 << kMapSizePow2;
   static constexpr const char* kShmEnvVar = "__AFL_SHM_ID";
 
-  static u32 FNV_1a(const std::string_view&& s) {
-    u32 hash = UINT32_C(0x811c9dc5);
-    for (u8 c : s) {
-      hash ^= c;
-      hash *= UINT32_C(0x01000193);
-    }
-    return hash;
-  }
-
   static constexpr u32 Hash_u32(u32 x) {
     x ^= x >> 16;
     x *= UINT32_C(0x7feb352d);
@@ -86,18 +76,10 @@ static class Tracer {
     return x;
   }
 
-  static std::string_view PyStringView(PyObject* const obj) {
-    if (PyUnicode_READY(obj) != 0) {
-      _exit(1);
-    }
-    std::size_t size = PyUnicode_GET_LENGTH(obj) * PyUnicode_KIND(obj);
-    return {static_cast<char*>(PyUnicode_DATA(obj)), size};
-  }
-
   static u32 HashFrame(const PyFrameObject* const frame) {
     auto code = frame->f_code;
-    u32 file_name = FNV_1a(PyStringView(code->co_filename));
-    u32 code_object_name = FNV_1a(PyStringView(code->co_name));
+    u32 file_name = PyObject_Hash(code->co_filename);
+    u32 code_object_name = PyObject_Hash(code->co_name);
     u32 first_lineno = Hash_u32(code->co_firstlineno);
     return file_name ^ code_object_name ^ first_lineno;
   }
