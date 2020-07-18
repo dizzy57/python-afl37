@@ -1,6 +1,11 @@
 #include <pybind11/pybind11.h>
+#include <signal.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
+
+#if __cplusplus < 201402L
+#error Please use at least -std=c++14
+#endif
 
 #define LIKELY(condition) __builtin_expect(static_cast<bool>(condition), 1)
 
