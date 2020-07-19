@@ -11,6 +11,7 @@
 
 namespace py = pybind11;
 
+namespace {
 using u8 = uint8_t;
 using u32 = uint32_t;
 
@@ -96,10 +97,10 @@ static class Tracer {
   }
 } tracer;
 
-[[gnu::hot]] int TraceFunc(PyObject*,
-                           PyFrameObject* frame,
-                           int what,
-                           PyObject*) {
+[[ gnu::flatten, gnu::hot ]] int TraceFunc(PyObject*,
+                                           PyFrameObject* frame,
+                                           int what,
+                                           PyObject*) {
   // Log both normal path and exception propagation path, they should give
   // different coverage
   if (LIKELY(what == PyTrace_OPCODE)) {
@@ -241,6 +242,7 @@ static bool loop(u32 max_cnt) {
     return false;
   }
 }
+}  // namespace
 
 PYBIND11_MODULE(afl37, m) {
   m.def("init", []() { loop(1); });
